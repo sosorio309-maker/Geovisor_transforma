@@ -8,6 +8,36 @@ from streamlit_folium import st_folium
 # --- Configuración general ---
 st.set_page_config(page_title="Mapa de Proyectos", layout="wide")
 
+st.markdown("""
+<style>
+/* Fuerza texto y fondo en el contenedor real de Streamlit */
+[data-testid="stAppViewContainer"] {
+  background-color: #F3F4F7 !important;
+  color: #2B2B2B !important;
+}
+
+/* Fuerza color de texto en la mayoría de elementos que Streamlit renderiza */
+[data-testid="stAppViewContainer"] * {
+  color: #2B2B2B;
+}
+
+/* Pero respeta tus títulos verdes/naranjas */
+h1, h2, h3, h4 {
+  color: #345D59 !important;
+}
+
+/* Sidebar ya la manejás, pero esto evita casos raros */
+section[data-testid="stSidebar"] * {
+  color: #2F3A39 !important;
+}
+
+/* Evita que los links queden “invisibles” */
+a, a * {
+  color: #1f77b4 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- Estilos (Visualizaciones + Slicers) ---
 st.markdown("""
 <style>
@@ -112,13 +142,14 @@ st.markdown(
 df = pd.read_csv("20251222 Geovisor Energia.csv")
 
 # --- Normalizar columnas ---
+df["Año"] = pd.to_numeric(df["Año"], errors="coerce").astype("Int64")
 df["Departamento "] = df["Departamento "].fillna("").astype(str).str.strip()
 df["Municipio "] = df["Municipio "].fillna("").astype(str).str.strip()
 df["Proyecto"] = df["Proyecto"].fillna("").astype(str).str.strip()
 df["Lat"] = pd.to_numeric(df["Lat"], errors="coerce")
 df["Long"] = pd.to_numeric(df["Long"], errors="coerce")
 df["Foto"] = df["Foto"].fillna("").astype(str).str.strip()
-df["Actuvidad "] = df["Actividad "].fillna("").astype(str).str.strip()
+df["Actividad "] = df["Actividad "].fillna("").astype(str).str.strip()
 df["Impacto"] = df["Impacto"].fillna("").astype(str).str.strip()
 
 # --- Filtros en la barra lateral ---
