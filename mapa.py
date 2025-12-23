@@ -338,7 +338,7 @@ with col_info:
     # Si no hay selección del mapa, usa el selectbox
     elif proyecto_click != "Todos" and not filtered_df.empty:
         seleccionado = filtered_df[filtered_df["Proyecto"] == proyecto_click]
-        municipios_txt = ", ".join(sorted(set(seleccionado["Municipio"].tolist())))
+        municipios_txt = ", ".join(sorted(set(seleccionado["Municipio "].tolist())))
         Actividades = sorted(set(selected_rows["Actividad "].tolist()))
         Impactos = sorted(set(selected_rows["Impacto"].tolist()))
         img = seleccionado.iloc[0]["URL_Foto"] if len(seleccionado) > 0 else ""
@@ -355,3 +355,4 @@ with col_info:
 
     else:
         st.info("Selecciona un proyecto o haz click en un punto del mapa para ver el detalle aquí.")
+
