@@ -4,6 +4,7 @@ import json
 import folium
 from folium.features import GeoJson
 from streamlit_folium import st_folium
+from branca.element import Template, MacroElement
 
 # --- Configuración general ---
 st.set_page_config(page_title="Mapa de Proyectos", layout="wide")
@@ -152,15 +153,37 @@ df["Foto"] = df["Foto"].fillna("").astype(str).str.strip()
 df["Actividad "] = df["Actividad "].fillna("").astype(str).str.strip()
 df["Impacto"] = df["Impacto"].fillna("").astype(str).str.strip()
 
+# =========================
+# COLORES POR PROYECTO (marca + 2 extra con alto contraste)
+# =========================
+BRAND_COLORS = ["#D24C2B", "#FC9A36", "#345D59", "#6B7280"]
+EXTRA_COLORS = ["#4C6EF5", "#7A3E9D"]  # contraste alto
+PROJECT_COLORS = BRAND_COLORS + EXTRA_COLORS
+
+# Mapeo estable (se mantiene aunque filtres)
+all_projects = sorted(df["Proyecto"].dropna().astype(str).unique().tolist())
+color_map = {p: PROJECT_COLORS[i % len(PROJECT_COLORS)] for i, p in enumerate(all_projects)}
+
 # --- Filtros en la barra lateral ---
+st.sidebar.markdown(
+    """
+    <div style="text-align:center; margin-bottom:20px;">
+        <img src="https://transforma.global/wp-content/uploads/2024/11/logo_TR_web.png"
+             style="max-width:180px; width:100%; height:auto;">
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+
 st.sidebar.header("🔍 Filtros")
+
 
 default_filters = {
     "año_sel": "Todos",
     "dep_sel": "Todos",
     "mun_sel": "Todos",
     "proyecto_click": "Todos",
-    # NUEVO: selección desde el mapa (NO es widget, así que podemos setearlo cuando queramos)
     "map_lat": None,
     "map_lon": None,
 }
@@ -210,13 +233,8 @@ if proyecto_click != "Todos":
 # --- Data para puntos del mapa ---
 points_df = filtered_df.dropna(subset=["Lat", "Long"]).copy()
 
-unique_points = (
-    points_df.groupby(["Lat", "Long"], as_index=False)
-    .agg({
-        "Departamento ": "first",
-        "Municipio ": "first"
-    })
-)
+# Proyectos presentes (para leyenda)
+projects_present = sorted(points_df["Proyecto"].dropna().astype(str).unique().tolist())
 
 # --- Cargar GeoJSON (contorno departamentos) ---
 with open("co.json", "r", encoding="utf-8") as f:
@@ -232,7 +250,7 @@ elif proyecto_click != "Todos" and not filtered_df.empty:
     lon_centro = float(seleccionado["Long"].mean())
     zoom = 7
 else:
-    lat_centro, lon_centro, zoom = 7.5709, -74.2973, 5
+    lat_centro, lon_centro, zoom = 7.5709, -74.2973, 6
 
 # --- Layout en columnas ---
 col_mapa, col_info = st.columns([2.5, 1])
@@ -264,21 +282,70 @@ with col_mapa:
         style_function=style_fn
     ).add_to(m)
 
-    # Puntos
-    for _, row in unique_points.iterrows():
+    # --- Puntos con color por proyecto ---
+    for _, row in points_df.iterrows():
+        proj = str(row["Proyecto"])
         depto = row["Departamento "]
         muni = row["Municipio "]
+
+        c = color_map.get(proj, "#999999")
 
         folium.CircleMarker(
             location=[row["Lat"], row["Long"]],
             radius=6,
-            color="#DC781E",
+            color=c,
             weight=2,
             fill=True,
-            fill_color="#FC9A36",
+            fill_color=c,
             fill_opacity=0.90,
-            tooltip=f"{depto} - {muni}",
+            tooltip=f"{proj} | {depto} - {muni}",
         ).add_to(m)
+
+    # --- Leyenda (scroll si hay muchos) ---
+    legend_items = "".join([
+        f"""
+        <div style="display:flex; align-items:center; margin-bottom:6px;">
+            <span style="
+                background:{color_map[p]};
+                width:12px;
+                height:12px;
+                border-radius:50%;
+                display:inline-block;
+                margin-right:8px;
+                border:1px solid rgba(0,0,0,0.3);
+            "></span>
+            <span style="font-size:12px; color:#2B2B2B;">{p}</span>
+        </div>
+        """
+        for p in (projects_present if projects_present else all_projects)
+    ])
+
+    legend_html = f"""
+    {{% macro html(this, kwargs) %}}
+    <div style="
+        position: fixed;
+        bottom: 25px;
+        left: 25px;
+        z-index: 9999;
+        background: rgba(255,255,255,0.95);
+        border-radius: 14px;
+        padding: 12px 14px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        width: 240px;
+        border: 1px solid rgba(0,0,0,0.12);
+    ">
+        <div style="font-weight:700; color:#345D59; margin-bottom:8px;">
+            Proyectos
+        </div>
+        <div style="max-height:200px; overflow-y:auto; padding-right:4px;">
+            {legend_items if legend_items else "<div style='font-size:12px;'>Sin proyectos</div>"}
+        </div>
+    </div>
+    {{% endmacro %}}
+    """
+    macro = MacroElement()
+    macro._template = Template(legend_html)
+    m.get_root().add_child(macro)
 
     map_state = st_folium(m, height=620, use_container_width=True)
 
@@ -304,20 +371,19 @@ if clicked_lat is not None and clicked_lon is not None and not points_df.empty:
         (points_df["Long"].sub(clicked_lon).abs() < TOL)
     ].copy()
 
-
 # =========================
 # PANEL DERECHO: detalle
 # =========================
 with col_info:
-    st.markdown("### 🧭 Información del proyecto seleccionado")
+    st.markdown("### 🧭 Información de la actividad seleccionada")
 
-    # Si hay selección desde el mapa, manda eso primero
     if clicked_lat is not None and clicked_lon is not None and not selected_rows.empty:
         proyectos_en_punto = sorted(set(selected_rows["Proyecto"].tolist()))
         municipios_txt = ", ".join(sorted(set(selected_rows["Municipio "].tolist())))
         deptos_txt = ", ".join(sorted(set(selected_rows["Departamento "].tolist())))
         Actividades = sorted(set(selected_rows["Actividad "].tolist()))
         Impactos = sorted(set(selected_rows["Impacto"].tolist()))
+
         img_candidates = selected_rows.loc[
             selected_rows["Foto"].astype(str).str.len() > 5, "Foto"
         ]
@@ -335,24 +401,5 @@ with col_info:
         </div>
         """, unsafe_allow_html=True)
 
-    # Si no hay selección del mapa, usa el selectbox
-    elif proyecto_click != "Todos" and not filtered_df.empty:
-        seleccionado = filtered_df[filtered_df["Proyecto"] == proyecto_click]
-        municipios_txt = ", ".join(sorted(set(seleccionado["Municipio "].tolist())))
-        Actividades = sorted(set(selected_rows["Actividad "].tolist()))
-        Impactos = sorted(set(selected_rows["Impacto"].tolist()))
-        img = seleccionado.iloc[0]["URL_Foto"] if len(seleccionado) > 0 else ""
-
-        st.markdown(f"""
-        <div class="project-card">
-            <h4 style="margin-bottom:5px; color:#345D59;">📍 <b>{proyecto_click}</b></h4>
-            <p><b>Municipios:</b> {municipios_txt}</p>
-            <p><b>Actividad:</b> {Actividades}</p>
-            <p><b>Impacto:</b> {", ".join(Impactos)}</p>
-            {"<img src='" + img + "' width='300' style='border-radius:10px; margin-top:10px;'>" if img else ""}
-        </div>
-        """, unsafe_allow_html=True)
-
     else:
-        st.info("Selecciona un proyecto o haz click en un punto del mapa para ver el detalle aquí.")
-
+        st.info("Haz click en un punto del mapa para ver el detalle aquí.")
